@@ -4,6 +4,7 @@ project(ceres_tests VERSION 0.0.1 LANGUAGES CXX)
 add_executable(
   ${PROJECT_NAME}
   src/test_hello.cpp
+  src/test_curvefit.cpp
   )
 
 target_include_directories(
