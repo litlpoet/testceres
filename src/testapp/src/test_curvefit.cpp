@@ -103,11 +103,9 @@ TEST(TestCurveFit, CurveFit)
   ceres::Problem problem;
   for (auto i = 0; i < kNumObservations; ++i)
   {
-    problem.AddResidualBlock(new ceres::AutoDiffCostFunction<ExponentialResidual, 1, 1, 1>(
-                                 new ExponentialResidual(data[2 * i], data[2 * i + 1])),
-                             nullptr,
-                             &m,
-                             &c);
+    auto cost_f = new ceres::AutoDiffCostFunction<ExponentialResidual, 1, 1, 1>(
+        new ExponentialResidual(data[2 * i], data[2 * i + 1]));
+    problem.AddResidualBlock(cost_f, nullptr, &m, &c);
   }
 
   ceres::Solver::Options options;
