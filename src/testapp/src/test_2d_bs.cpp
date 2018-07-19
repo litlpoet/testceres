@@ -52,6 +52,9 @@ double const target2[] = {
 
 struct BSResidual
 {
+  int const           _n;
+  std::vector<double> _x;
+
   BSResidual(int const n, double const* const x)
       : _n(n)
   {
@@ -69,34 +72,219 @@ struct BSResidual
     }
     return true;
   }
+};
 
- private:
+struct BSResidualDyn
+{
   int const           _n;
   std::vector<double> _x;
+
+  BSResidualDyn(int const n, double const* const x)
+      : _n(n)
+  {
+    for (int i = 0; i < n; ++i)
+      _x.push_back(x[i]);
+  }
+
+  template<typename T>
+  bool
+  operator()(T const* const* w, T* residual) const
+  {
+    for (int i = 0; i < _n; ++i)
+    {
+      residual[i] =
+          T(_x[i]) - T(b0[i]) - w[0][0] * T(b1_ws[i] - b0[i]) - w[0][1] * T(b2_ws[i] - b0[i]);
+    }
+    return true;
+  }
+};
+
+struct BSResidualSingle
+{
+  int const           _v_id;
+  std::vector<double> _x;
+
+  BSResidualSingle(int v_id, double const* const x)
+      : _v_id(v_id)
+  {
+    for (int i = 0; i < 2; ++i)
+      _x.push_back(x[i]);
+  }
+
+  template<typename T>
+  bool
+  operator()(T const* const w, T* residual) const
+  {
+    for (int i = 0; i < 2; ++i)
+    {
+      auto v_id   = 2 * _v_id + i;
+      residual[i] = T(_x[i]) - T(b0[v_id]) - w[0] * T(b1_ws[v_id] - b0[v_id]) -
+                    w[1] * T(b2_ws[v_id] - b0[v_id]);
+    }
+    return true;
+  }
 };
 
 TEST(TestBSWeightFit, WeightFit)
 {
-  double w[] = {0.0, 0.0};
+  double w_f1[] = {0.0, 0.0};
+  double w_f2[] = {0.0, 0.0};
 
   ceres::Problem problem;
-  auto cost_f = new ceres::AutoDiffCostFunction<BSResidual, 6, 2>(new BSResidual(6, target2));
-  problem.AddResidualBlock(cost_f, nullptr, w);
+  auto cost_f1 = new ceres::AutoDiffCostFunction<BSResidual, 6, 2>(new BSResidual(6, target2));
+  auto cost_f2 = new ceres::AutoDiffCostFunction<BSResidual, 6, 2>(new BSResidual(6, target1));
+  problem.AddResidualBlock(cost_f1, nullptr, w_f1);
+  problem.SetParameterLowerBound(w_f1, 0, 0.0);
+  problem.SetParameterUpperBound(w_f1, 0, 1.0);
+  problem.SetParameterLowerBound(w_f1, 1, 0.0);
+  problem.SetParameterUpperBound(w_f1, 1, 1.0);
+  problem.AddResidualBlock(cost_f2, nullptr, w_f2);
+  problem.SetParameterLowerBound(w_f2, 0, 0.0);
+  problem.SetParameterUpperBound(w_f2, 0, 1.0);
+  problem.SetParameterLowerBound(w_f2, 1, 0.0);
+  problem.SetParameterUpperBound(w_f2, 1, 1.0);
 
   ceres::Solver::Options options;
-  options.max_num_iterations           = 25;
+  options.max_num_iterations           = 100;
   options.linear_solver_type           = ceres::DENSE_QR;
   options.minimizer_progress_to_stdout = true;
 
   ceres::Solver::Summary summary;
   ceres::Solve(options, &problem, &summary);
 
+  std::cout << "PER MESH COST!!!!!!!!" << std::endl;
   std::cout << summary.FullReport() << std::endl;
-  std::cout << "w0: " << w[0] << std::endl;
-  std::cout << "w1: " << w[1] << std::endl;
+  std::cout << "f1_w0: " << w_f1[0] << std::endl;
+  std::cout << "f1_w1: " << w_f1[1] << std::endl;
+  std::cout << "f2_w0: " << w_f2[0] << std::endl;
+  std::cout << "f2_w1: " << w_f2[1] << std::endl;
+  std::cout << "result1" << std::endl;
   for (int i = 0; i < 6; ++i)
   {
-    auto result = b0[i] + w[0] * (b1_ws[i] - b0[i]) + w[1] * (b2_ws[i] - b0[i]);
+    auto result = b0[i] + w_f1[0] * (b1_ws[i] - b0[i]) + w_f1[1] * (b2_ws[i] - b0[i]);
+    std::cout << result << std::endl;
+  }
+  std::cout << "result2" << std::endl;
+  for (int i = 0; i < 6; ++i)
+  {
+    auto result = b0[i] + w_f2[0] * (b1_ws[i] - b0[i]) + w_f2[1] * (b2_ws[i] - b0[i]);
+    std::cout << result << std::endl;
+  }
+}
+
+TEST(TestBSWeightFit, WeightFit2)
+{
+  double w_f1[] = {0.0, 0.0};
+  double w_f2[] = {0.0, 0.0};
+
+  ceres::Problem      problem;
+  double const* const x = target2;
+  for (auto i = 0, n = 3; i < n; ++i)
+  {
+    problem.AddResidualBlock(
+        new ceres::AutoDiffCostFunction<BSResidualSingle, 2, 2>(new BSResidualSingle(i, x + 2 * i)),
+        nullptr,
+        w_f1);
+  }
+  problem.SetParameterLowerBound(w_f1, 0, 0.0);
+  problem.SetParameterUpperBound(w_f1, 0, 1.0);
+  problem.SetParameterLowerBound(w_f1, 1, 0.0);
+  problem.SetParameterUpperBound(w_f1, 1, 1.0);
+
+  double const* const x2 = target1;
+  for (auto i = 0, n = 3; i < n; ++i)
+  {
+    problem.AddResidualBlock(new ceres::AutoDiffCostFunction<BSResidualSingle, 2, 2>(
+                                 new BSResidualSingle(i, x2 + 2 * i)),
+                             nullptr,
+                             w_f2);
+  }
+  problem.SetParameterLowerBound(w_f2, 0, 0.0);
+  problem.SetParameterUpperBound(w_f2, 0, 1.0);
+  problem.SetParameterLowerBound(w_f2, 1, 0.0);
+  problem.SetParameterUpperBound(w_f2, 1, 1.0);
+
+  ceres::Solver::Options options;
+  options.max_num_iterations           = 100;
+  options.linear_solver_type           = ceres::DENSE_QR;
+  options.minimizer_progress_to_stdout = true;
+
+  ceres::Solver::Summary summary;
+  ceres::Solve(options, &problem, &summary);
+
+  std::cout << "PER VERTEX COST!!!!!!!!" << std::endl;
+  std::cout << summary.FullReport() << std::endl;
+  std::cout << "f1_w0: " << w_f1[0] << std::endl;
+  std::cout << "f1_w1: " << w_f1[1] << std::endl;
+  std::cout << "f2_w0: " << w_f2[0] << std::endl;
+  std::cout << "f2_w1: " << w_f2[1] << std::endl;
+  std::cout << "result1" << std::endl;
+  for (int i = 0; i < 6; ++i)
+  {
+    auto result = b0[i] + w_f1[0] * (b1_ws[i] - b0[i]) + w_f1[1] * (b2_ws[i] - b0[i]);
+    std::cout << result << std::endl;
+  }
+  std::cout << "result2" << std::endl;
+  for (int i = 0; i < 6; ++i)
+  {
+    auto result = b0[i] + w_f2[0] * (b1_ws[i] - b0[i]) + w_f2[1] * (b2_ws[i] - b0[i]);
+    std::cout << result << std::endl;
+  }
+}
+
+TEST(TestBSWeightFit, WeightFit3)
+{
+  double w_f1[] = {0.0, 0.0};
+  double w_f2[] = {0.0, 0.0};
+
+  ceres::Problem problem;
+  auto cost_f1 = new ceres::AutoDiffCostFunction<BSResidual, 6, 2>(new BSResidual(6, target2));
+  auto cost_f2 = new ceres::AutoDiffCostFunction<BSResidual, 6, 2>(new BSResidual(6, target1));
+
+  auto cost_dyn_f1 =
+      new ceres::DynamicAutoDiffCostFunction<BSResidualDyn, 4>(new BSResidualDyn(6, target2));
+  cost_dyn_f1->AddParameterBlock(2);
+  cost_dyn_f1->SetNumResiduals(6);
+  problem.AddResidualBlock(cost_dyn_f1, nullptr, w_f1);
+  problem.SetParameterLowerBound(w_f1, 0, 0.0);
+  problem.SetParameterUpperBound(w_f1, 0, 1.0);
+  problem.SetParameterLowerBound(w_f1, 1, 0.0);
+  problem.SetParameterUpperBound(w_f1, 1, 1.0);
+
+  auto cost_dyn_f2 =
+      new ceres::DynamicAutoDiffCostFunction<BSResidualDyn, 4>(new BSResidualDyn(6, target1));
+  cost_dyn_f2->AddParameterBlock(2);
+  cost_dyn_f2->SetNumResiduals(6);
+  problem.AddResidualBlock(cost_dyn_f2, nullptr, w_f2);
+  problem.SetParameterLowerBound(w_f2, 0, 0.0);
+  problem.SetParameterUpperBound(w_f2, 0, 1.0);
+  problem.SetParameterLowerBound(w_f2, 1, 0.0);
+  problem.SetParameterUpperBound(w_f2, 1, 1.0);
+
+  ceres::Solver::Options options;
+  options.max_num_iterations           = 100;
+  options.linear_solver_type           = ceres::DENSE_QR;
+  options.minimizer_progress_to_stdout = true;
+
+  ceres::Solver::Summary summary;
+  ceres::Solve(options, &problem, &summary);
+
+  std::cout << "DYNAMIC PER MESH COST!!!!!!!!" << std::endl;
+  std::cout << summary.FullReport() << std::endl;
+  std::cout << "f1_w0: " << w_f1[0] << std::endl;
+  std::cout << "f1_w1: " << w_f1[1] << std::endl;
+  std::cout << "f2_w0: " << w_f2[0] << std::endl;
+  std::cout << "f2_w1: " << w_f2[1] << std::endl;
+  std::cout << "result1" << std::endl;
+  for (int i = 0; i < 6; ++i)
+  {
+    auto result = b0[i] + w_f1[0] * (b1_ws[i] - b0[i]) + w_f1[1] * (b2_ws[i] - b0[i]);
+    std::cout << result << std::endl;
+  }
+  std::cout << "result2" << std::endl;
+  for (int i = 0; i < 6; ++i)
+  {
+    auto result = b0[i] + w_f2[0] * (b1_ws[i] - b0[i]) + w_f2[1] * (b2_ws[i] - b0[i]);
     std::cout << result << std::endl;
   }
 }
