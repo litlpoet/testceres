@@ -50,6 +50,67 @@ double const target2[] = {
     2.0  // v3
 };
 
+class BSShapeCost : public ceres::CostFunction
+{
+  size_t              _n_bs;
+  size_t              _n_v;
+  std::vector<double> _t;
+  std::vector<double> _w;
+
+ public:
+  BSShapeCost(size_t const& n_bs, size_t const& n_v, double const* const t, double const* const w)
+      : _n_bs(n_bs)
+      , _n_v(n_v)
+  {
+    set_num_residuals(n_v);
+    for (size_t i = 0; i < n_bs; ++i)
+      mutable_parameter_block_sizes()->push_back(n_v);
+    for (size_t i = 0; i < n_bs; ++i)
+      _w.push_back(w[i]);
+    for (size_t i = 0; i < n_v; ++i)
+      _t.push_back(t[i]);
+  }
+
+  virtual ~BSShapeCost();
+
+  BSShapeCost(BSShapeCost const&) = delete;
+
+  BSShapeCost&
+  operator=(BSShapeCost const&) = delete;
+
+  bool
+  Evaluate(double const* const* x, double* residuals, double** jacobians) const final
+  {
+    for (size_t i = 0; i < _n_v; ++i)
+    {
+      residuals[i] = _t[i];
+      for (size_t j = 0; j < _n_bs; ++j)
+      {
+        residuals[i] -= (b0[i] + _w[j] * (b1_ws[i] - b0[i] + x[j][i]));
+      }
+    }
+
+    if (!jacobians)
+      return true;
+
+    for (size_t i = 0; i < _n_bs; ++i)
+    {
+      if (jacobians[i])
+      {
+        for (size_t j = 0; j < _n_v; ++j)
+        {
+          for (size_t k = 0; k < _n_v; ++k)
+          {
+            jacobians[i][j * parameter_block_sizes()[i] + k] = -_w[i];
+          }
+        }
+      }
+    }
+
+    return true;
+  }
+};
+
 struct BSResidual
 {
   int const           _n;

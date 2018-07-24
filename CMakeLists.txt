@@ -12,4 +12,4 @@ find_package(GTest REQUIRED)
 find_package(Ceres REQUIRED)
 
 enable_testing()
-add_subdirectory(testapp)
+add_subdirectory(src/testapp)
